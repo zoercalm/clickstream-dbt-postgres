@@ -1,5 +1,6 @@
 """Synthetic clickstream ingestion with transactional daily checkpoints."""
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -18,19 +19,30 @@ def rows(day, count=4):
     for i in range(1,count+1):
         vid=day.toordinal()*100+i
         visits.append((vid,day,'mobile' if i%2 else 'desktop'))
-        for j,(event,referrer) in enumerate([('page_view','organic'),('cart_entry','product'),('cart_entry','search'),('order','cart')]):
-            if event=='order' and i%2: continue
-            hits.append((vid*10+j,vid,day,j,event,referrer))
+        paths = [
+            [('page_view','organic',0)],
+            [('cart_entry','product',1),('cart_entry','search',2),('order','cart',3)],
+            [('cart_entry','email',1),('order','cart',2),('order','cart',3)],
+            [('cart_entry','product',1),('cart_entry','search',1)],
+        ]
+        for j,(event,referrer,seq) in enumerate(paths[(i-1)%4]):
+            hits.append((vid*10+j,vid,day,seq,event,referrer))
     return visits,hits
 
 def setup(c):
     c.execute('CREATE SCHEMA IF NOT EXISTS raw')
     c.execute('CREATE TABLE IF NOT EXISTS raw.visits(visit_id bigint PRIMARY KEY,day date NOT NULL,device text NOT NULL)')
     c.execute('CREATE TABLE IF NOT EXISTS raw.hits(hit_id bigint PRIMARY KEY,visit_id bigint REFERENCES raw.visits,day date NOT NULL,seq int,event text,referrer text)')
+    c.execute('CREATE TABLE IF NOT EXISTS raw.batches(batch text PRIMARY KEY, parameters text NOT NULL)')
     c.execute('CREATE TABLE IF NOT EXISTS raw.checkpoints(batch text,day date,PRIMARY KEY(batch,day))')
 
 def load(c,start,end,batch,resume=False,fail_after=None,count=4):
     setup(c);day=start;completed=0
+    params=json.dumps(dict(start=str(start),end=str(end),count=count,source_version=2),sort_keys=True)
+    existing=c.execute('SELECT parameters FROM raw.batches WHERE batch=%s',(batch,)).fetchone()
+    if resume and not existing:raise ValueError('unknown resume batch')
+    if existing and existing[0]!=params:raise ValueError('batch parameters changed; use a new batch')
+    c.execute('INSERT INTO raw.batches VALUES (%s,%s) ON CONFLICT DO NOTHING',(batch,params))
     while day<=end:
         if resume and c.execute('SELECT 1 FROM raw.checkpoints WHERE batch=%s AND day=%s',(batch,day)).fetchone():
             day+=timedelta(days=1);continue
@@ -48,12 +60,12 @@ def load(c,start,end,batch,resume=False,fail_after=None,count=4):
 
 def run(start,end,batch='demo',resume=False,fail_after=None,count=4):
     if start>end:raise ValueError('start must not exceed end')
+    if not batch.strip() or type(count) is not int or not 0<=count<=99:raise ValueError('batch required; count must be 0..99')
     with connect() as c:
         if not c.execute('SELECT pg_try_advisory_lock(%s)',(LOCK,)).fetchone()[0]:raise RuntimeError('another pipeline is running')
         try:
             load(c,start,end,batch,resume,fail_after,count)
             env=dict(os.environ,DBT_SEND_ANONYMOUS_USAGE_STATS='false')
-            import json
             subprocess.run([str(Path(sys.executable).parent/'dbt'),'build','--project-dir',str(ROOT/'dbt'),'--profiles-dir',str(ROOT/'dbt'),'--vars',json.dumps({'start':str(start),'end':str(end)})],check=True,env=env)
         finally:c.execute('SELECT pg_advisory_unlock(%s)',(LOCK,))
 
