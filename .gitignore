@@ -7,3 +7,5 @@ node_modules/
 output/
 dbt/target/
 dbt/logs/
+
+.DS_Store
