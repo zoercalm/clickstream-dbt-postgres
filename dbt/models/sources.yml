@@ -1,0 +1,18 @@
+version: 2
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: visits
+        columns:
+          - name: visit_id
+            tests: [unique, not_null]
+      - name: hits
+        columns:
+          - name: hit_id
+            tests: [unique, not_null]
+          - name: visit_id
+            tests:
+              - relationships:
+                  to: source('raw', 'visits')
+                  field: visit_id

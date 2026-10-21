@@ -1,0 +1,8 @@
+version: 2
+models:
+  - name: cart_journey
+    columns:
+      - name: visit_id
+        tests: [unique, not_null]
+      - name: day
+        tests: [not_null]

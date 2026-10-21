@@ -1,0 +1,6 @@
+name: clickstream_demo
+version: '1.0'
+config-version: 2
+profile: clickstream_demo
+model-paths: [models]
+test-paths: [tests]

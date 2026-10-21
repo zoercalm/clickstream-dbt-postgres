@@ -1,0 +1,12 @@
+clickstream_demo:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('PGHOST', '127.0.0.1') }}"
+      port: "{{ env_var('PGPORT', '15432') | int }}"
+      user: "{{ env_var('PGUSER', 'demo') }}"
+      password: "{{ env_var('PGPASSWORD', 'demo') }}"
+      dbname: "{{ env_var('PGDATABASE', 'demo') }}"
+      schema: reporting
+      threads: 2
